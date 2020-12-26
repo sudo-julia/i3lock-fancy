@@ -3,94 +3,112 @@
 # Dependencies: imagemagick, i3lock-color-git, scrot
 set -o errexit -o noclobber -o nounset
 
-HUE=(-level 0%,100%,0.6)
-EFFECT=(-filter Gaussian -resize 20% -define filter:sigma=1.5 -resize 500.5%)
+hue=(-level "0%,100%,0.6")
+effect=(-filter Gaussian -resize 20% -define filter:sigma=1.5 -resize 500.5%)
 # default system sans-serif font
-FONT="$(convert -list font | awk "{ a[NR] = \$2 } /family: $(fc-match sans -f "%{family}\n")/ { print a[NR-1]; exit }")"
-IMAGE="$(mktemp).png"
-DM=$(xdpyinfo | awk '/^  dimensions(.+([0-9]+))/{print $2}')
+font="$(convert -list font | awk "{ a[NR] = \$2 } /family: $(fc-match sans -f "%{family}\n")/ { print a[NR-1]; exit }")"
+image="$(mktemp).png"
+dm=$(xdpyinfo | awk '/^  dimensions(.+([0-9]+))/{print $2}')
 
-OPTIONS="Options:
+options="Options:
     -h, --help   This help menu.
+
     -g, --greyscale  Set background to greyscale instead of color.
+
     -p, --pixelate   Pixelate the background instead of blur, runs faster.
-    -f <fontname>, --font <fontname>  Set a custom font. Type 'convert -list font' in a terminal to get a list."
+
+    -f <fontname>, --font <fontname>
+
+    -t <text>, --text <text> Set a custom text prompt.
+
+    -l, --listfonts Display a list of possible fonts for use with -f/--font.
+                    Note: this option will not lock the screen, it displays
+                    the list and exits immediately."
 
 # move pipefail down as for some reason "convert -list font" returns 1
 set -o pipefail
-trap 'rm -f "$IMAGE"' EXIT
-TEMP="$(getopt -o :hpgf: -l help,pixelate,greyscale,font: --name "$0" -- "$@")"
-eval set -- "$TEMP"
+trap 'rm -f "$image"' EXIT
+temp="$(getopt -o :hlpgt:f: -l help,listfonts,pixelate,greyscale,text:,font: --name "$0" -- "$@")"
+eval set -- "$temp"
+
+# l10n support
+text="Type password to unlock"
+case "${LANG:-}" in
+    af_* ) text="Tik wagwoord om te ontsluit" ;; # Afrikaans
+    de_* ) text="Bitte Passwort eingeben" ;; # Deutsch
+    da_* ) text="Indtast adgangskode" ;; # Danish
+    en_* ) text="Type password to unlock" ;; # English
+    es_* ) text="Ingrese su contraseña" ;; # Española
+    fr_* ) text="Entrez votre mot de passe" ;; # Français
+    he_* ) text="הליענה לטבל המסיס דלקה" ;; # Hebrew עברית (convert doesn't play bidi well)
+    hi_* ) text="अनलॉक करने के लिए पासवर्ड टाईप करें" ;; # Hindi
+    id_* ) text="Masukkan kata sandi Anda" ;; # Bahasa Indonesia
+    it_* ) text="Inserisci la password" ;; # Italian
+    ja_* ) text="パスワードを入力してください" ;; # Japanese
+    lv_* ) text="Ievadi paroli" ;; # Latvian
+    nb_* ) text="Skriv inn passord" ;; # Norwegian
+    pl_* ) text="Podaj hasło" ;; # Polish
+    pt_* ) text="Digite a senha para desbloquear" ;; # Português
+    tr_* ) text="Giriş yapmak için şifrenizi girin" ;; # Turkish
+    ru_* ) text="Введите пароль" ;; # Russian
+    * ) text="Type password to unlock" ;; # Default to English
+esac
 
 while true ; do
     case "$1" in
         -h|--help)
-            printf "Usage: $(basename $0) [options]\n\n$OPTIONS\n\n" ; exit 1 ;;
-        -g|--greyscale) HUE=(-level 0%,100%,0.6 -set colorspace Gray -separate -average) ; shift ;;
-        -p|--pixelate) EFFECT=(-scale 10% -scale 1000%) ; shift ;;
+            printf "Usage: %s [options]\n\n%s\n\n" "${0##*/}" "$options"; exit 1 ;;
+        -g|--greyscale) hue=(-level "0%,100%,0.6" -set colorspace Gray -separate -average) ; shift ;;
+        -p|--pixelate) effect=(-scale 10% -scale 1000%) ; shift ;;
         -f|--font)
             case "$2" in
                 "") shift 2 ;;
-                *) FONT=$2 ; shift 2 ;;
+                *) font=$2 ; shift 2 ;;
             esac ;;
+        -t|--text) text=$2 ; shift 2 ;;
+        -l|--listfonts)
+        convert -list font | awk -F: '/Font: / { print $2 }' | sort -du | command -- "${PAGER:-less}"
+        exit 0 ;;
         --) shift ; break ;;
         *) echo "error" ; exit 1 ;;
     esac
 done
 
-# l10n support
-TEXT="Type password to unlock"
-case "${LANG:-}" in
-    de_* ) TEXT="Bitte Passwort eingeben" ;; # Deutsch
-    da_* ) TEXT="Indtast adgangskode" ;; # Danish
-    en_* ) TEXT="Type password to unlock" ;; # English
-    es_* ) TEXT="Ingrese su contraseña" ;; # Española
-    fr_* ) TEXT="Entrez votre mot de passe" ;; # Français
-    he_* ) TEXT="הליענה לטבל המסיס דלקה" ;; # Hebrew עברית (convert doesn't play bidi well)
-    id_* ) TEXT="Masukkan kata sandi Anda" ;; # Bahasa Indonesia
-    it_* ) TEXT="Inserisci la password" ;; # Italian
-    ja_* ) TEXT="パスワードを入力してください" ;; # Japanese
-    lv_* ) TEXT="Ievadi paroli" ;; # Latvian
-    pl_* ) TEXT="Podaj hasło" ;; # Polish
-    pt_* ) TEXT="Digite a senha para desbloquear" ;; # Português
-    ru_* ) TEXT="Введите пароль" ;; # Russian
-    * ) TEXT="Type password to unlock" ;; # Default to English
-esac
-
-scrot -z "$IMAGE"
-ICON="/usr/share/i3lock-fancy-dualmonitor/lock.png"
-PARAM=("--insidecolor=0000001c" "--ringcolor=0000003e" \
+scrot -z "$image"
+icon="/usr/share/i3lock-fancy-dualmonitor/lock.png"
+param=("--insidecolor=0000001c" "--ringcolor=0000003e" \
     "--linecolor=00000000" "--keyhlcolor=ffffff80" "--ringvercolor=ffffff00" \
     "--separatorcolor=22222260" "--insidevercolor=ffffff1c" \
     "--ringwrongcolor=ffffff55" "--insidewrongcolor=ffffff1c" \
     "--verifcolor=ffffff00" "--wrongcolor=ff000000" "--timecolor=ffffff00" \
     "--datecolor=ffffff00" "--layoutcolor=ffffff00")
 
-LOCK=()
-while read LINE
+lock=()
+# shellcheck disable=SC2162
+while read line
 do
-    if [[ "$LINE" =~ ([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+) ]]; then
+    if [[ "$line" =~ ([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+) ]]; then
         W=${BASH_REMATCH[1]}
         H=${BASH_REMATCH[2]}
         Xoff=${BASH_REMATCH[3]}
         Yoff=${BASH_REMATCH[4]}
-        MIDXi=$(($W / 2 + $Xoff - 60  / 2))
-        MIDYi=$(($H / 2 + $Yoff - 60  / 2))
-        MIDXt=$(($W / 2 + $Xoff - 285 / 2))
-        MIDYt=$(($H / 2 + $Yoff + 320 / 2))
-        MIDXts=$(($MIDXt + 2))
-        MIDYts=$(($MIDYt + 2))
-        LOCK+=(\( -size $DM xc:none -font $FONT -pointsize 26 -fill black -annotate +$MIDXts+$MIDYts "$TEXT" -blur 0x2 \
-               -fill black -annotate +$MIDXts+$MIDYts "$TEXT" -blur 0x1 -fill white -annotate +$MIDXt+$MIDYt "$TEXT" \) \
+        MIDXi=$((W / 2 + Xoff - 60  / 2))
+        MIDYi=$((H / 2 + Yoff - 60  / 2))
+        MIDXt=$((W / 2 + Xoff - 285 / 2))
+        MIDYt=$((H / 2 + Yoff + 320 / 2))
+        MIDXts=$((MIDXt + 2))
+        MIDYts=$((MIDYt + 2))
+        lock+=(\( -size "$dm" xc:none -font "$font" -pointsize 26 -fill black -annotate "+$MIDXts+$MIDYts" "$text" -blur 0x2 \
+               -fill black -annotate "+$MIDXts+$MIDYts" "$text" -blur 0x1 -fill white -annotate "+$MIDXt+$MIDYt" "$text" \) \
                -flatten \
-               $ICON -geometry +$MIDXi+$MIDYi -composite)
+               "$icon" -geometry +"$MIDXi+$MIDYi" -composite)
     fi
 done <<<"$(xrandr)"
 
-convert "$IMAGE" "${HUE[@]}" "${EFFECT[@]}" "${LOCK[@]}" "$IMAGE"
+convert "$image" "${hue[@]}" "${effect[@]}" "${lock[@]}" "$image"
 
 # try to use a forked version of i3lock with prepared parameters
-if ! i3lock -n "${PARAM[@]}" -i "$IMAGE" > /dev/null 2>&1; then
+if ! i3lock -n "${param[@]}" -i "$image" > /dev/null 2>&1; then
     # We have failed, lets get back to stock one
-    i3lock -n -i "$IMAGE"
+    i3lock -n -i "$image"
 fi
